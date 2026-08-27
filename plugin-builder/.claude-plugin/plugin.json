@@ -1,0 +1,8 @@
+{
+  "name": "plugin-builder",
+  "description": "Build a Livespace plugin — an iframe widget embedded in a Livespace profile. Captures the plugin's purpose, then routes to the iframe-widget builder (client-only or backend-enabled).",
+  "version": "1.0.0",
+  "author": {
+    "name": "Livespace"
+  }
+}

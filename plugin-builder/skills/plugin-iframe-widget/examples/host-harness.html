@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Livespace plugin — local host harness</title>
+  <!--
+    Local test host for a Livespace iframe-widget plugin.
+
+    It impersonates the Livespace host: it embeds your plugin in an <iframe>, sends a
+    `livespace-plugin:context` message, and answers `livespace-plugin:request-api-credentials`
+    with the credentials you type below — so you can exercise the full postMessage contract
+    WITHOUT a real Livespace instance.
+
+    Usage:
+      1. Serve your plugin and this file over http (e.g. `npx serve .` from the project root),
+         or just open this file and point "Plugin URL" at your served plugin.
+      2. Pick the profile (deal / company / person / space), fill in the entity + user id. Add API credentials if the plugin is API-backed.
+      3. Click "Load / reload plugin", then "Send context".
+      4. Watch the message log; resize via the width/height presets to test breakpoints.
+
+    There is no auth and no origin check here — it mirrors the baseline contract (see postmessage-contract.md).
+  -->
+  <style>
+    :root { font: 14px/1.5 system-ui, sans-serif; color: #1a1a2e; }
+    body { margin: 0; display: grid; grid-template-columns: 360px 1fr; height: 100vh; }
+    .panel { padding: 16px; overflow-y: auto; border-right: 1px solid #e5e7eb; background: #f0f4f8; }
+    .stage { padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+    h1 { font-size: 15px; margin: 0 0 12px; }
+    h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: #9ca3af; margin: 18px 0 6px; }
+    label { display: block; font-size: 12px; color: #6b7280; margin: 8px 0 2px; }
+    input, select { width: 100%; box-sizing: border-box; padding: 6px 8px; border: 1px solid #d1d5db; border-radius: 6px; font: inherit; }
+    button { padding: 7px 12px; border: 0; border-radius: 6px; background: #3b82f6; color: #fff; font: inherit; cursor: pointer; }
+    button.secondary { background: #fff; color: #1a1a2e; border: 1px solid #d1d5db; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+    iframe { border: 1px solid #d1d5db; border-radius: 8px; background: #fff; }
+    #log { flex: 1; margin: 0; padding: 10px; background: #1a1a2e; color: #d1fae5; border-radius: 8px;
+           font: 12px/1.45 ui-monospace, monospace; overflow: auto; white-space: pre-wrap; }
+    .log-out { color: #93c5fd; } .log-in { color: #fcd34d; } .log-warn { color: #fca5a5; }
+  </style>
+</head>
+<body>
+  <div class="panel">
+    <h1>Livespace plugin host harness</h1>
+
+    <label>Plugin URL (iframe src)</label>
+    <input id="src" value="http://localhost:3000/index.html">
+
+    <h2>Context (embedding)</h2>
+    <label>Embed as</label>
+    <select id="embed">
+      <option value="deal">Deal profile</option>
+      <option value="company">Company profile</option>
+      <option value="person">Person profile</option>
+      <option value="space">Space profile</option>
+    </select>
+    <label>Entity id (UUID)</label>
+    <input id="entityId" value="00000000-0000-0000-0000-000000000001">
+    <label>Name (deal / company / space)</label>
+    <input id="entityName" value="Acme Sp. z o.o.">
+    <label>Person first / last name (person profile only)</label>
+    <div class="row" style="margin-top:2px">
+      <input id="personFirst" value="Jan" style="flex:1">
+      <input id="personLast" value="Kowalski" style="flex:1">
+    </div>
+    <label>User id (UUID)</label>
+    <input id="userId" value="00000000-0000-0000-0000-0000000000aa">
+
+    <h2>API credentials (API-backed plugins)</h2>
+    <label>apiBaseUrl</label>
+    <input id="apiBaseUrl" value="https://acme.livespace.io">
+    <label>apiKey</label><input id="apiKey" value="dev-key">
+    <label>apiSha</label><input id="apiSha" value="dev-sha">
+    <label>apiSession (a fresh one is auto-generated per request if blank)</label>
+    <input id="apiSession" placeholder="leave blank to auto-generate">
+
+    <div class="row">
+      <button id="load">Load / reload plugin</button>
+      <button id="ctx" class="secondary">Send context</button>
+    </div>
+
+    <h2>Iframe size (breakpoint test)</h2>
+    <div class="row">
+      <button class="secondary" data-w="200" data-h="240">micro · S (200×240)</button>
+      <button class="secondary" data-w="320" data-h="380">default · M (320×380)</button>
+      <button class="secondary" data-w="480" data-h="540">wide · L (480×540)</button>
+    </div>
+  </div>
+
+  <div class="stage">
+    <iframe id="frame" width="320" height="380" title="plugin under test"></iframe>
+    <h2 style="margin:0">Message log</h2>
+    <pre id="log"></pre>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const frame = $('frame');
+    const logEl = $('log');
+    const uuid = () => (crypto.randomUUID ? crypto.randomUUID()
+      : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+          const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+        }));
+
+    function log(dir, obj) {
+      const cls = dir === '→' ? 'log-out' : dir === '⚠' ? 'log-warn' : 'log-in';
+      const time = new Date().toISOString().slice(11, 23);
+      logEl.innerHTML += `<span class="${cls}">${time} ${dir} ${typeof obj === 'string' ? obj : JSON.stringify(obj)}</span>\n`;
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function post(msg) {
+      frame.contentWindow.postMessage(msg, '*');
+      log('→', msg);
+    }
+
+    function sendContext() {
+      const embed = $('embed').value;
+      const id = $('entityId').value;
+      // person carries firstName/lastName; the other profiles carry a single name
+      const entity = embed === 'person'
+        ? { id, firstName: $('personFirst').value, lastName: $('personLast').value }
+        : { id, name: $('entityName').value };
+      const payload = { user: { id: $('userId').value } };
+      payload[embed] = entity;
+      post({ type: 'livespace-plugin:context', payload });
+    }
+
+    $('load').onclick = () => { logEl.innerHTML = ''; frame.src = $('src').value; };
+    $('ctx').onclick = sendContext;
+    document.querySelectorAll('[data-w]').forEach(b => b.onclick = () => {
+      frame.width = b.dataset.w; frame.height = b.dataset.h;
+    });
+
+    // Reply to the iframe's credential requests, echoing the requestId (the correlation key).
+    window.addEventListener('message', (event) => {
+      let data;
+      try { data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data; }
+      catch { return; }
+      if (!data || !data.type || !String(data.type).startsWith('livespace-plugin:')) return;
+      log('←', data);
+
+      if (data.type === 'livespace-plugin:request-api-credentials') {
+        const requestId = data.payload && data.payload.requestId;
+        if (!requestId) { log('⚠', 'request-api-credentials had no requestId'); return; }
+        post({
+          type: 'livespace-plugin:api-credentials',
+          payload: {
+            requestId,
+            apiBaseUrl: $('apiBaseUrl').value,
+            apiKey: $('apiKey').value,
+            apiSha: $('apiSha').value,
+            apiSession: $('apiSession').value || uuid(),
+          }
+        });
+      }
+    });
+
+    // Auto-send context shortly after the plugin loads, so a fresh open already shows the ready state.
+    frame.addEventListener('load', () => setTimeout(sendContext, 200));
+    frame.src = $('src').value;
+  </script>
+</body>
+</html>

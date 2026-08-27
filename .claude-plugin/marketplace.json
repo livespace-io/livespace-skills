@@ -1,0 +1,16 @@
+{
+  "name": "livespace",
+  "metadata": {
+    "description": "Claude Code skills from the Livespace team."
+  },
+  "owner": {
+    "name": "Livespace"
+  },
+  "plugins": [
+    {
+      "name": "plugin-builder",
+      "source": "./plugin-builder",
+      "description": "Build a Livespace plugin — an iframe widget embedded in a Deal, Company, Person, or Space profile. Captures the plugin's purpose, picks the type, and hands off to a client-only or backend-enabled builder sub-skill."
+    }
+  ]
+}
